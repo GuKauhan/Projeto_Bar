@@ -25,12 +25,20 @@
     <div id="app" class="max-w-md mx-auto min-h-screen"></div>
     <script>
         const STORAGE_KEY = 'comandas_bar_state_v1';
+        const DEFAULT_QUICK_BUTTONS = [{ name: 'Cerveja 1', price: 8 }, { name: 'Cerveja 2', price: 10 }, { name: 'Dose', price: 12 }];
         function loadState() {
             try {
                 const raw = localStorage.getItem(STORAGE_KEY);
-                return raw ? JSON.parse(raw) : { clients: [], currentClientId: null };
+                const parsed = raw ? JSON.parse(raw) : null;
+                return {
+                    clients: (parsed && parsed.clients) || [],
+                    currentClientId: (parsed && parsed.currentClientId) || null,
+                    pinnedClients: (parsed && parsed.pinnedClients) || [],
+                    webhookUrl: (parsed && parsed.webhookUrl) || null,
+                    quickButtons: (parsed && parsed.quickButtons) || DEFAULT_QUICK_BUTTONS.slice()
+                };
             } catch (e) {
-                return { clients: [], currentClientId: null };
+                return { clients: [], currentClientId: null, pinnedClients: [], webhookUrl: null, quickButtons: DEFAULT_QUICK_BUTTONS.slice() };
             }
         }
         let state = loadState();
@@ -48,6 +56,17 @@
             div.textContent = str;
             return div.innerHTML;
         }
+        function escapeAttr(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function getOrCreateClientByName(name) {
+            let client = state.clients.find(c => c.name === name);
+            if (!client) {
+                client = { id: uid(), name: name, items: [], dividirPor: 1 };
+                state.clients.push(client);
+            }
+            return client;
+        }
         const app = document.getElementById('app');
         function render() {
             const client = state.clients.find(c => c.id === state.currentClientId);
@@ -58,6 +77,7 @@
             }
         }
         function renderHome() {
+            const pinnedChips = state.pinnedClients.map(name => `<button data-name="${escapeAttr(name)}" class="pinned-chip bg-indigo-600 active:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-full text-sm">${escapeHtml(name)}</button>`).join('');
             const list = state.clients.map(c => {
                 const total = c.items.reduce((s, i) => s + i.value, 0);
                 return `<button data-id="${c.id}" class="client-item w-full bg-gray-800 active:bg-gray-700 rounded-2xl p-5 mb-3 flex justify-between items-center text-left">
@@ -66,14 +86,54 @@
 </button>`;
             }).join('');
             app.innerHTML = `<div class="p-4 flex flex-col min-h-screen">
-<h1 class="text-3xl font-extrabold mb-6 mt-2 text-center">Comandas do Bar</h1>
+<div class="flex justify-between items-center mb-4 mt-2">
+<h1 class="text-3xl font-extrabold">Comandas do Bar</h1>
+<button id="settingsBtn" class="text-2xl leading-none">&#9881;&#65039;</button>
+</div>
+<div class="mb-5">
+<div class="flex justify-between items-center mb-2">
+<span class="text-sm font-bold text-gray-400">&#128204; Clientes Fixados</span>
+<button id="pinManageBtn" class="text-xs font-bold bg-gray-800 active:bg-gray-700 px-3 py-1 rounded-full text-indigo-300">+ Fixar</button>
+</div>
+<div class="flex flex-wrap gap-2">${pinnedChips || '<span class="text-gray-600 text-sm">Nenhum cliente fixado</span>'}</div>
+</div>
 <button id="newClientBtn" class="w-full bg-green-500 active:bg-green-600 text-white text-2xl font-extrabold py-6 rounded-2xl mb-6 shadow-lg">+ NOVO CLIENTE</button>
 <div class="flex-1 overflow-y-auto pb-4">${state.clients.length ? list : '<p class="text-gray-500 text-center mt-10 text-lg">Nenhum cliente ativo</p>'}</div>
 </div>`;
+            document.getElementById('settingsBtn').onclick = () => {
+                const current = state.webhookUrl || '';
+                const url = prompt('URL do Webhook (Make.com):', current);
+                if (url !== null) {
+                    state.webhookUrl = url.trim() || null;
+                    saveState();
+                }
+            };
+            document.getElementById('pinManageBtn').onclick = () => {
+                const name = prompt('Nome para fixar ou desfixar:');
+                if (name && name.trim()) {
+                    const n = name.trim();
+                    const idx = state.pinnedClients.indexOf(n);
+                    if (idx >= 0) {
+                        state.pinnedClients.splice(idx, 1);
+                    } else {
+                        state.pinnedClients.push(n);
+                    }
+                    saveState();
+                    render();
+                }
+            };
+            document.querySelectorAll('.pinned-chip').forEach(chip => {
+                chip.onclick = () => {
+                    const client = getOrCreateClientByName(chip.dataset.name);
+                    state.currentClientId = client.id;
+                    saveState();
+                    render();
+                };
+            });
             document.getElementById('newClientBtn').onclick = () => {
                 const name = prompt('Nome do Cliente:');
                 if (name && name.trim()) {
-                    state.clients.push({ id: uid(), name: name.trim(), items: [] });
+                    state.clients.push({ id: uid(), name: name.trim(), items: [], dividirPor: 1 });
                     saveState();
                     render();
                 }
@@ -86,27 +146,67 @@
                 };
             });
         }
+        function addValue(client, value, name) {
+            if (!isNaN(value) && value > 0) {
+                client.items.push({ id: uid(), value: value, name: name || null });
+                saveState();
+                if (navigator.vibrate) navigator.vibrate(40);
+                render();
+            }
+        }
+        function finishTab(client, total, method) {
+            if (confirm('Finalizar via ' + method + ' e fechar a conta de ' + client.name + '?')) {
+                if (state.webhookUrl) {
+                    fetch(state.webhookUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ date: new Date().toLocaleString('pt-BR'), clientName: client.name, paymentMethod: method, total: total, items: client.items }) }).catch(() => { });
+                }
+                state.clients = state.clients.filter(c => c.id !== client.id);
+                state.currentClientId = null;
+                saveState();
+                render();
+            }
+        }
         function renderClientView(client) {
             const total = client.items.reduce((s, i) => s + i.value, 0);
+            const dividirPor = client.dividirPor || 1;
             const itemsHtml = client.items.slice().reverse().map(item => `<div class="flex justify-between items-center bg-gray-800 rounded-xl p-3 mb-2">
-<span class="text-lg font-medium">${formatCurrency(item.value)}</span>
+<span class="text-lg font-medium">${item.name ? escapeHtml(item.name) + ' &middot; ' : ''}${formatCurrency(item.value)}</span>
 <button data-id="${item.id}" class="delete-btn bg-red-500 active:bg-red-600 text-white font-bold w-9 h-9 rounded-full text-lg leading-none">&#10005;</button>
+</div>`).join('');
+            const quickButtonsHtml = state.quickButtons.map((qb, idx) => `<div class="relative">
+<button data-idx="${idx}" class="quick-btn w-full bg-gray-700 active:bg-gray-600 rounded-xl py-3 text-center">
+<span class="block text-sm font-semibold truncate">${escapeHtml(qb.name)}</span>
+<span class="block text-green-400 font-bold">${formatCurrency(qb.price)}</span>
+</button>
+<button data-idx="${idx}" class="edit-quick-btn absolute -top-2 -right-2 bg-gray-600 active:bg-gray-500 w-6 h-6 rounded-full text-xs">&#9999;&#65039;</button>
 </div>`).join('');
             app.innerHTML = `<div class="p-4 flex flex-col min-h-screen">
 <div class="flex items-center mb-4">
 <button id="backBtn" class="text-gray-300 text-3xl mr-3 leading-none">&#8592;</button>
 <h1 class="text-2xl font-extrabold flex-1 truncate">${escapeHtml(client.name)}</h1>
 </div>
+<div class="grid grid-cols-3 gap-2 mb-3">${quickButtonsHtml}</div>
 <div class="flex gap-2 mb-4">
 <input id="valueInput" type="number" inputmode="decimal" step="0.01" placeholder="0,00" class="flex-1 bg-gray-800 text-white text-2xl font-bold rounded-xl p-4 text-center outline-none border-2 border-gray-700 focus:border-green-500">
 <button id="addBtn" class="bg-green-500 active:bg-green-600 text-white font-extrabold px-6 rounded-xl text-lg">Add</button>
 </div>
 <div class="flex-1 overflow-y-auto mb-4">${client.items.length ? itemsHtml : '<p class="text-gray-500 text-center mt-8">Nenhum valor lançado</p>'}</div>
-<div class="bg-gray-800 rounded-2xl p-4 mb-4 flex justify-between items-center">
+<div class="bg-gray-800 rounded-2xl p-4 mb-3 flex justify-between items-center">
 <span class="text-xl font-bold">TOTAL</span>
 <span class="text-3xl font-extrabold text-green-400">${formatCurrency(total)}</span>
 </div>
-<button id="finishBtn" class="w-full bg-red-600 active:bg-red-700 text-white text-xl font-extrabold py-5 rounded-2xl shadow-lg mb-2">FINALIZAR E FECHAR CONTA</button>
+<div class="bg-gray-800 rounded-2xl p-3 mb-4 flex items-center justify-between">
+<div class="flex items-center gap-2">
+<button id="splitMinusBtn" class="bg-gray-700 active:bg-gray-600 w-9 h-9 rounded-full text-xl font-bold">-</button>
+<span class="text-sm text-gray-400 font-semibold w-6 text-center">${dividirPor}</span>
+<button id="splitPlusBtn" class="bg-gray-700 active:bg-gray-600 w-9 h-9 rounded-full text-xl font-bold">+</button>
+</div>
+<span class="text-yellow-400 text-xl font-extrabold">Por pessoa: ${formatCurrency(total / dividirPor)}</span>
+</div>
+<div class="grid grid-cols-3 gap-2 mb-2">
+<button id="finishPixBtn" class="bg-teal-500 active:bg-teal-600 text-white font-extrabold py-4 rounded-xl text-sm">FECHAR NO PIX</button>
+<button id="finishCashBtn" class="bg-green-600 active:bg-green-700 text-white font-extrabold py-4 rounded-xl text-sm">FECHAR DINHEIRO</button>
+<button id="finishCardBtn" class="bg-blue-600 active:bg-blue-700 text-white font-extrabold py-4 rounded-xl text-sm">FECHAR CART&Atilde;O</button>
+</div>
 </div>`;
             document.getElementById('backBtn').onclick = () => {
                 state.currentClientId = null;
@@ -115,17 +215,35 @@
             };
             const input = document.getElementById('valueInput');
             input.focus();
-            function addValue() {
+            function addFromInput() {
                 const v = parseFloat(String(input.value).replace(',', '.'));
-                if (!isNaN(v) && v > 0) {
-                    client.items.push({ id: uid(), value: v });
-                    saveState();
-                    render();
-                }
+                addValue(client, v, null);
             }
-            document.getElementById('addBtn').onclick = addValue;
+            document.getElementById('addBtn').onclick = addFromInput;
             input.addEventListener('keydown', e => {
-                if (e.key === 'Enter') addValue();
+                if (e.key === 'Enter') addFromInput();
+            });
+            document.querySelectorAll('.quick-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const qb = state.quickButtons[parseInt(btn.dataset.idx, 10)];
+                    addValue(client, qb.price, qb.name);
+                };
+            });
+            document.querySelectorAll('.edit-quick-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const idx = parseInt(btn.dataset.idx, 10);
+                    const qb = state.quickButtons[idx];
+                    const newName = prompt('Nome do item:', qb.name);
+                    if (newName === null) return;
+                    const newPriceStr = prompt('Preço (R$):', String(qb.price).replace('.', ','));
+                    if (newPriceStr === null) return;
+                    const newPrice = parseFloat(newPriceStr.replace(',', '.'));
+                    if (newName.trim() && !isNaN(newPrice) && newPrice > 0) {
+                        state.quickButtons[idx] = { name: newName.trim(), price: newPrice };
+                        saveState();
+                        render();
+                    }
+                };
             });
             document.querySelectorAll('.delete-btn').forEach(btn => {
                 btn.onclick = () => {
@@ -134,14 +252,19 @@
                     render();
                 };
             });
-            document.getElementById('finishBtn').onclick = () => {
-                if (confirm('Finalizar e fechar a conta de ' + client.name + '?')) {
-                    state.clients = state.clients.filter(c => c.id !== client.id);
-                    state.currentClientId = null;
-                    saveState();
-                    render();
-                }
+            document.getElementById('splitMinusBtn').onclick = () => {
+                client.dividirPor = Math.max(1, (client.dividirPor || 1) - 1);
+                saveState();
+                render();
             };
+            document.getElementById('splitPlusBtn').onclick = () => {
+                client.dividirPor = (client.dividirPor || 1) + 1;
+                saveState();
+                render();
+            };
+            document.getElementById('finishPixBtn').onclick = () => finishTab(client, total, 'Pix');
+            document.getElementById('finishCashBtn').onclick = () => finishTab(client, total, 'Dinheiro');
+            document.getElementById('finishCardBtn').onclick = () => finishTab(client, total, 'Cartão');
         }
         render();
     </script>
