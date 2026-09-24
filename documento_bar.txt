@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>Comandas do Bar</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * {
+            touch-action: manipulation;
+        }
+
+        body {
+            padding-top: env(safe-area-inset-top, 0px);
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+        }
+    </style>
+</head>
+
+<body class="bg-gray-900 text-white min-h-screen">
+    <div id="app" class="max-w-md mx-auto min-h-screen"></div>
+    <script>
+        const STORAGE_KEY = 'comandas_bar_state_v1';
+        function loadState() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                return raw ? JSON.parse(raw) : { clients: [], currentClientId: null };
+            } catch (e) {
+                return { clients: [], currentClientId: null };
+            }
+        }
+        let state = loadState();
+        function saveState() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+        function uid() {
+            return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        }
+        function formatCurrency(v) {
+            return 'R$ ' + v.toFixed(2).replace('.', ',');
+        }
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+        const app = document.getElementById('app');
+        function render() {
+            const client = state.clients.find(c => c.id === state.currentClientId);
+            if (client) {
+                renderClientView(client);
+            } else {
+                renderHome();
+            }
+        }
+        function renderHome() {
+            const list = state.clients.map(c => {
+                const total = c.items.reduce((s, i) => s + i.value, 0);
+                return `<button data-id="${c.id}" class="client-item w-full bg-gray-800 active:bg-gray-700 rounded-2xl p-5 mb-3 flex justify-between items-center text-left">
+<span class="text-xl font-semibold">${escapeHtml(c.name)}</span>
+<span class="text-lg font-bold text-green-400">${formatCurrency(total)}</span>
+</button>`;
+            }).join('');
+            app.innerHTML = `<div class="p-4 flex flex-col min-h-screen">
+<h1 class="text-3xl font-extrabold mb-6 mt-2 text-center">Comandas do Bar</h1>
+<button id="newClientBtn" class="w-full bg-green-500 active:bg-green-600 text-white text-2xl font-extrabold py-6 rounded-2xl mb-6 shadow-lg">+ NOVO CLIENTE</button>
+<div class="flex-1 overflow-y-auto pb-4">${state.clients.length ? list : '<p class="text-gray-500 text-center mt-10 text-lg">Nenhum cliente ativo</p>'}</div>
+</div>`;
+            document.getElementById('newClientBtn').onclick = () => {
+                const name = prompt('Nome do Cliente:');
+                if (name && name.trim()) {
+                    state.clients.push({ id: uid(), name: name.trim(), items: [] });
+                    saveState();
+                    render();
+                }
+            };
+            document.querySelectorAll('.client-item').forEach(btn => {
+                btn.onclick = () => {
+                    state.currentClientId = btn.dataset.id;
+                    saveState();
+                    render();
+                };
+            });
+        }
+        function renderClientView(client) {
+            const total = client.items.reduce((s, i) => s + i.value, 0);
+            const itemsHtml = client.items.slice().reverse().map(item => `<div class="flex justify-between items-center bg-gray-800 rounded-xl p-3 mb-2">
+<span class="text-lg font-medium">${formatCurrency(item.value)}</span>
+<button data-id="${item.id}" class="delete-btn bg-red-500 active:bg-red-600 text-white font-bold w-9 h-9 rounded-full text-lg leading-none">&#10005;</button>
+</div>`).join('');
+            app.innerHTML = `<div class="p-4 flex flex-col min-h-screen">
+<div class="flex items-center mb-4">
+<button id="backBtn" class="text-gray-300 text-3xl mr-3 leading-none">&#8592;</button>
+<h1 class="text-2xl font-extrabold flex-1 truncate">${escapeHtml(client.name)}</h1>
+</div>
+<div class="flex gap-2 mb-4">
+<input id="valueInput" type="number" inputmode="decimal" step="0.01" placeholder="0,00" class="flex-1 bg-gray-800 text-white text-2xl font-bold rounded-xl p-4 text-center outline-none border-2 border-gray-700 focus:border-green-500">
+<button id="addBtn" class="bg-green-500 active:bg-green-600 text-white font-extrabold px-6 rounded-xl text-lg">Add</button>
+</div>
+<div class="flex-1 overflow-y-auto mb-4">${client.items.length ? itemsHtml : '<p class="text-gray-500 text-center mt-8">Nenhum valor lançado</p>'}</div>
+<div class="bg-gray-800 rounded-2xl p-4 mb-4 flex justify-between items-center">
+<span class="text-xl font-bold">TOTAL</span>
+<span class="text-3xl font-extrabold text-green-400">${formatCurrency(total)}</span>
+</div>
+<button id="finishBtn" class="w-full bg-red-600 active:bg-red-700 text-white text-xl font-extrabold py-5 rounded-2xl shadow-lg mb-2">FINALIZAR E FECHAR CONTA</button>
+</div>`;
+            document.getElementById('backBtn').onclick = () => {
+                state.currentClientId = null;
+                saveState();
+                render();
+            };
+            const input = document.getElementById('valueInput');
+            input.focus();
+            function addValue() {
+                const v = parseFloat(String(input.value).replace(',', '.'));
+                if (!isNaN(v) && v > 0) {
+                    client.items.push({ id: uid(), value: v });
+                    saveState();
+                    render();
+                }
+            }
+            document.getElementById('addBtn').onclick = addValue;
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') addValue();
+            });
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.onclick = () => {
+                    client.items = client.items.filter(i => i.id !== btn.dataset.id);
+                    saveState();
+                    render();
+                };
+            });
+            document.getElementById('finishBtn').onclick = () => {
+                if (confirm('Finalizar e fechar a conta de ' + client.name + '?')) {
+                    state.clients = state.clients.filter(c => c.id !== client.id);
+                    state.currentClientId = null;
+                    saveState();
+                    render();
+                }
+            };
+        }
+        render();
+    </script>
+</body>
+
+</html>
