@@ -6,6 +6,8 @@
     <meta name="viewport"
         content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>Comandas do Bar</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#111827">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         * {
@@ -23,7 +25,12 @@
     <div id="app" class="max-w-md mx-auto min-h-screen"></div>
     <script>
         const STORAGE_KEY = 'comandas_bar_state_v1';
-        const DEFAULT_QUICK_BUTTONS = [{ name: 'Cerveja 1', price: 8 }, { name: 'Cerveja 2', price: 10 }, { name: 'Dose', price: 12 }];
+        const DEFAULT_QUICK_BUTTONS = [
+            { name: 'Cerveja 1', price: 8 },
+            { name: 'Cerveja 2', price: 10 },
+            { name: 'Dose', price: 12 }
+        ];
+
         function loadState() {
             try {
                 const raw = localStorage.getItem(STORAGE_KEY);
@@ -36,27 +43,44 @@
                     quickButtons: (parsed && parsed.quickButtons) || DEFAULT_QUICK_BUTTONS.slice()
                 };
             } catch (e) {
-                return { clients: [], currentClientId: null, pinnedClients: [], webhookUrl: null, quickButtons: DEFAULT_QUICK_BUTTONS.slice() };
+                return {
+                    clients: [],
+                    currentClientId: null,
+                    pinnedClients: [],
+                    webhookUrl: null,
+                    quickButtons: DEFAULT_QUICK_BUTTONS.slice()
+                };
             }
         }
+
         let state = loadState();
+
         function saveState() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
         }
+
         function uid() {
             return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
         }
+
         function formatCurrency(v) {
-            return 'R$ ' + v.toFixed(2).replace('.', ',');
+            return 'R$ ' + Number(v || 0).toFixed(2).replace('.', ',');
         }
+
         function escapeHtml(str) {
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;
         }
+
         function escapeAttr(str) {
-            return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
         }
+
         function getOrCreateClientByName(name) {
             let client = state.clients.find(c => c.name === name);
             if (!client) {
@@ -65,7 +89,9 @@
             }
             return client;
         }
+
         const app = document.getElementById('app');
+
         function render() {
             const client = state.clients.find(c => c.id === state.currentClientId);
             if (client) {
@@ -74,8 +100,12 @@
                 renderHome();
             }
         }
+
         function renderHome() {
-            const pinnedChips = state.pinnedClients.map(name => `<button data-name="${escapeAttr(name)}" class="pinned-chip bg-indigo-600 active:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-full text-sm">${escapeHtml(name)}</button>`).join('');
+            const pinnedChips = state.pinnedClients.map(name =>
+                `<button data-name="${escapeAttr(name)}" class="pinned-chip bg-indigo-600 active:bg-indigo-700 text-white font-semibold px-4 py-2 rounded-full text-sm">${escapeHtml(name)}</button>`
+            ).join('');
+
             const list = state.clients.map(c => {
                 const total = c.items.reduce((s, i) => s + i.value, 0);
                 return `<button data-id="${c.id}" class="client-item w-full bg-gray-800 active:bg-gray-700 rounded-2xl p-5 mb-3 flex justify-between items-center text-left">
@@ -83,6 +113,7 @@
 <span class="text-lg font-bold text-green-400">${formatCurrency(total)}</span>
 </button>`;
             }).join('');
+
             app.innerHTML = `<div class="p-4 flex flex-col min-h-screen">
 <div class="flex justify-between items-center mb-4 mt-2">
 <h1 class="text-3xl font-extrabold">Comandas do Bar</h1>
@@ -98,6 +129,7 @@
 <button id="newClientBtn" class="w-full bg-green-500 active:bg-green-600 text-white text-2xl font-extrabold py-6 rounded-2xl mb-6 shadow-lg">+ NOVO CLIENTE</button>
 <div class="flex-1 overflow-y-auto pb-4">${state.clients.length ? list : '<p class="text-gray-500 text-center mt-10 text-lg">Nenhum cliente ativo</p>'}</div>
 </div>`;
+
             document.getElementById('settingsBtn').onclick = () => {
                 const current = state.webhookUrl || '';
                 const url = prompt('URL do Webhook (Make.com):', current);
@@ -106,6 +138,7 @@
                     saveState();
                 }
             };
+
             document.getElementById('pinManageBtn').onclick = () => {
                 const name = prompt('Nome para fixar ou desfixar:');
                 if (name && name.trim()) {
@@ -120,6 +153,7 @@
                     render();
                 }
             };
+
             document.querySelectorAll('.pinned-chip').forEach(chip => {
                 chip.onclick = () => {
                     const client = getOrCreateClientByName(chip.dataset.name);
@@ -128,6 +162,7 @@
                     render();
                 };
             });
+
             document.getElementById('newClientBtn').onclick = () => {
                 const name = prompt('Nome do Cliente:');
                 if (name && name.trim()) {
@@ -136,6 +171,7 @@
                     render();
                 }
             };
+
             document.querySelectorAll('.client-item').forEach(btn => {
                 btn.onclick = () => {
                     state.currentClientId = btn.dataset.id;
@@ -144,6 +180,7 @@
                 };
             });
         }
+
         function addValue(client, value, name) {
             if (!isNaN(value) && value > 0) {
                 client.items.push({ id: uid(), value: value, name: name || null });
@@ -152,6 +189,7 @@
                 render();
             }
         }
+
         function finishTab(client, total, method) {
             if (confirm('Finalizar via ' + method + ' e fechar a conta de ' + client.name + '?')) {
                 if (state.webhookUrl) {
@@ -165,22 +203,33 @@
                             total: total,
                             items: client.items.map(i => `${i.name || 'Avulso'} (R$ ${i.value.toFixed(2)})`).join(' + ')
                         })
-                    }).catch(() => { });
-                    function renderClientView(client) {
-                        const total = client.items.reduce((s, i) => s + i.value, 0);
-                        const dividirPor = client.dividirPor || 1;
-                        const itemsHtml = client.items.slice().reverse().map(item => `<div class="flex justify-between items-center bg-gray-800 rounded-xl p-3 mb-2">
+                    }).catch(() => {});
+                }
+                state.clients = state.clients.filter(c => c.id !== client.id);
+                state.currentClientId = null;
+                saveState();
+                render();
+            }
+        }
+
+        function renderClientView(client) {
+            const total = client.items.reduce((s, i) => s + i.value, 0);
+            const dividirPor = client.dividirPor || 1;
+
+            const itemsHtml = client.items.slice().reverse().map(item => `<div class="flex justify-between items-center bg-gray-800 rounded-xl p-3 mb-2">
 <span class="text-lg font-medium">${item.name ? escapeHtml(item.name) + ' &middot; ' : ''}${formatCurrency(item.value)}</span>
 <button data-id="${item.id}" class="delete-btn bg-red-500 active:bg-red-600 text-white font-bold w-9 h-9 rounded-full text-lg leading-none">&#10005;</button>
 </div>`).join('');
-                        const quickButtonsHtml = state.quickButtons.map((qb, idx) => `<div class="relative">
+
+            const quickButtonsHtml = state.quickButtons.map((qb, idx) => `<div class="relative">
 <button data-idx="${idx}" class="quick-btn w-full bg-gray-700 active:bg-gray-600 rounded-xl py-3 text-center">
 <span class="block text-sm font-semibold truncate">${escapeHtml(qb.name)}</span>
 <span class="block text-green-400 font-bold">${formatCurrency(qb.price)}</span>
 </button>
 <button data-idx="${idx}" class="edit-quick-btn absolute -top-2 -right-2 bg-gray-600 active:bg-gray-500 w-6 h-6 rounded-full text-xs">&#9999;&#65039;</button>
 </div>`).join('');
-                        app.innerHTML = `<div class="p-4 flex flex-col min-h-screen">
+
+            app.innerHTML = `<div class="p-4 flex flex-col min-h-screen">
 <div class="flex items-center mb-4">
 <button id="backBtn" class="text-gray-300 text-3xl mr-3 leading-none">&#8592;</button>
 <h1 class="text-2xl font-extrabold flex-1 truncate">${escapeHtml(client.name)}</h1>
@@ -209,65 +258,85 @@
 <button id="finishCardBtn" class="bg-blue-600 active:bg-blue-700 text-white font-extrabold py-4 rounded-xl text-sm">FECHAR CART&Atilde;O</button>
 </div>
 </div>`;
-                        document.getElementById('backBtn').onclick = () => {
-                            state.currentClientId = null;
-                            saveState();
-                            render();
-                        };
-                        const input = document.getElementById('valueInput');
-                        input.focus();
-                        function addFromInput() {
-                            const v = parseFloat(String(input.value).replace(',', '.'));
-                            addValue(client, v, null);
-                        }
-                        document.getElementById('addBtn').onclick = addFromInput;
-                        input.addEventListener('keydown', e => {
-                            if (e.key === 'Enter') addFromInput();
-                        });
-                        document.querySelectorAll('.quick-btn').forEach(btn => {
-                            btn.onclick = () => {
-                                const qb = state.quickButtons[parseInt(btn.dataset.idx, 10)];
-                                addValue(client, qb.price, qb.name);
-                            };
-                        });
-                        document.querySelectorAll('.edit-quick-btn').forEach(btn => {
-                            btn.onclick = () => {
-                                const idx = parseInt(btn.dataset.idx, 10);
-                                const qb = state.quickButtons[idx];
-                                const newName = prompt('Nome do item:', qb.name);
-                                if (newName === null) return;
-                                const newPriceStr = prompt('Preço (R$):', String(qb.price).replace('.', ','));
-                                if (newPriceStr === null) return;
-                                const newPrice = parseFloat(newPriceStr.replace(',', '.'));
-                                if (newName.trim() && !isNaN(newPrice) && newPrice > 0) {
-                                    state.quickButtons[idx] = { name: newName.trim(), price: newPrice };
-                                    saveState();
-                                    render();
-                                }
-                            };
-                        });
-                        document.querySelectorAll('.delete-btn').forEach(btn => {
-                            btn.onclick = () => {
-                                client.items = client.items.filter(i => i.id !== btn.dataset.id);
-                                saveState();
-                                render();
-                            };
-                        });
-                        document.getElementById('splitMinusBtn').onclick = () => {
-                            client.dividirPor = Math.max(1, (client.dividirPor || 1) - 1);
-                            saveState();
-                            render();
-                        };
-                        document.getElementById('splitPlusBtn').onclick = () => {
-                            client.dividirPor = (client.dividirPor || 1) + 1;
-                            saveState();
-                            render();
-                        };
-                        document.getElementById('finishPixBtn').onclick = () => finishTab(client, total, 'Pix');
-                        document.getElementById('finishCashBtn').onclick = () => finishTab(client, total, 'Dinheiro');
-                        document.getElementById('finishCardBtn').onclick = () => finishTab(client, total, 'Cartão');
+
+            document.getElementById('backBtn').onclick = () => {
+                state.currentClientId = null;
+                saveState();
+                render();
+            };
+
+            const input = document.getElementById('valueInput');
+            input.focus();
+
+            function addFromInput() {
+                const v = parseFloat(String(input.value).replace(',', '.'));
+                addValue(client, v, null);
+            }
+
+            document.getElementById('addBtn').onclick = addFromInput;
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') addFromInput();
+            });
+
+            document.querySelectorAll('.quick-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const qb = state.quickButtons[parseInt(btn.dataset.idx, 10)];
+                    addValue(client, qb.price, qb.name);
+                };
+            });
+
+            document.querySelectorAll('.edit-quick-btn').forEach(btn => {
+                btn.onclick = () => {
+                    const idx = parseInt(btn.dataset.idx, 10);
+                    const qb = state.quickButtons[idx];
+                    const newName = prompt('Nome do item:', qb.name);
+                    if (newName === null) return;
+                    const newPriceStr = prompt('Preço (R$):', String(qb.price).replace('.', ','));
+                    if (newPriceStr === null) return;
+                    const newPrice = parseFloat(newPriceStr.replace(',', '.'));
+                    if (newName.trim() && !isNaN(newPrice) && newPrice > 0) {
+                        state.quickButtons[idx] = { name: newName.trim(), price: newPrice };
+                        saveState();
+                        render();
                     }
+                };
+            });
+
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.onclick = () => {
+                    client.items = client.items.filter(i => i.id !== btn.dataset.id);
+                    saveState();
                     render();
+                };
+            });
+
+            document.getElementById('splitMinusBtn').onclick = () => {
+                client.dividirPor = Math.max(1, (client.dividirPor || 1) - 1);
+                saveState();
+                render();
+            };
+
+            document.getElementById('splitPlusBtn').onclick = () => {
+                client.dividirPor = (client.dividirPor || 1) + 1;
+                saveState();
+                render();
+            };
+
+            document.getElementById('finishPixBtn').onclick = () => finishTab(client, total, 'Pix');
+            document.getElementById('finishCashBtn').onclick = () => finishTab(client, total, 'Dinheiro');
+            document.getElementById('finishCardBtn').onclick = () => finishTab(client, total, 'Cartão');
+        }
+
+        render();
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(reg => console.log('Service Worker registrado!'))
+                    .catch(err => console.log('Erro no Service Worker', err));
+            });
+        }
     </script>
 </body>
 
