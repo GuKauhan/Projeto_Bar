@@ -1,4 +1,4 @@
-const CACHE_NAME = 'comandas-bar-v2';
+const CACHE_NAME = 'comandas-bar-v3';
 const ASSETS = [
   './index.html',
   './manifest.json'
